@@ -2,6 +2,10 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 
 class User(AbstractUser):
+    """
+    Custom User model extending AbstractUser.
+    Uses 'email' as the unique identifier for authentication instead of 'username'.
+    """
     email = models.EmailField(unique=True)
     
     USERNAME_FIELD = 'email'
@@ -11,6 +15,9 @@ class User(AbstractUser):
         return self.email
 
 class ChatMessage(models.Model):
+    """
+    Model to store chat history between the user and the bot.
+    """
     ROLE_CHOICES = [
         ('user', 'User'),
         ('bot', 'Bot'),
@@ -24,6 +31,10 @@ class ChatMessage(models.Model):
         return f"{self.role} message by {self.user.email} at {self.timestamp}"
 
 class Document(models.Model):
+    """
+    Model to store documents that can be used for RAG context.
+    (Note: Actual vector embeddings are stored in Pinecone, this is for metadata/admin reference)
+    """
     title = models.CharField(max_length=255)
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)

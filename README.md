@@ -23,24 +23,24 @@ This project is a backend-only AI chatbot built with Django and Django REST Fram
 ## API Documentation
 
 ### Authentication
-*   **POST /api/signup/**
+*   **POST /signup**
     *   **Description**: Register a new user.
     *   **Body**: `{"email": "user@example.com", "username": "user", "password": "securepassword"}`
     *   **Response**: `201 Created` with user details.
 
-*   **POST /api/login/**
+*   **POST /login**
     *   **Description**: Authenticate and receive JWT tokens.
     *   **Body**: `{"email": "user@example.com", "password": "securepassword"}`
     *   **Response**: `{"refresh": "...", "access": "..."}`
 
 ### Chat
-*   **POST /api/chat/**
+*   **POST /chat**
     *   **Headers**: `Authorization: Bearer <access_token>`
     *   **Description**: Send a message to the chatbot.
     *   **Body**: `{"message": "What is the capital of France?"}`
     *   **Response**: `{"response": "The capital of France is Paris."}`
 
-*   **GET /api/chat-history/**
+*   **GET /chat-history**
     *   **Headers**: `Authorization: Bearer <access_token>`
     *   **Description**: Retrieve past chat messages for the authenticated user.
     *   **Response**: List of message objects `[{"id": 1, "role": "user", "content": "...", "timestamp": "..."}, ...]`
@@ -53,9 +53,9 @@ A Postman collection is included in the root directory (`postman_collection.json
 2.  Click **Import** and select the `postman_collection.json` file.
 3.  The collection "Backend Only RAG Based Chatbot" will appear in your workspace.
 4.  **Environment Variables**: The collection is configured to automatically save the `access_token` after a successful login.
-    *   Run the **Signup** request first to create a user.
-    *   Run the **Login** request. The token will be saved automatically.
-    *   You can now run **Send Message** and **Get History** requests without manually copying the token.
+    *   Run the **Signup** request first to create a user. (Change the credentials in the body if needed)
+    *   Run the **Login** request. The token will be saved automatically. (Change the credentials in the body if needed)
+    *   You can now run **Send Message** and **Get History** requests without manually copying the token. (Change the message in the body if needed)
 
 ## Setup Instructions
 
@@ -113,7 +113,7 @@ The project uses **APScheduler** to handle background tasks. The scheduler is in
 
 ### How did you integrate the RAG pipeline for the chatbot, and what role does document retrieval play in the response generation?
 The RAG pipeline is implemented in `api/rag_service.py`.
-1.  **Embeddings**: User queries are converted into vector embeddings using `HuggingFaceInferenceAPIEmbeddings` (sentence-transformers model).
+1.  **Embeddings**: User queries are converted into vector embeddings using `HuggingFaceEndpointEmbeddings` (sentence-transformers model).
 2.  **Retrieval**: These embeddings are used to query the **Pinecone** vector database to find the top 3 most relevant document chunks.
 3.  **Role**: Document retrieval provides the "Ground Truth" or context. This context is injected into the prompt sent to the LLM, ensuring the model generates answers based on specific knowledge rather than just its training data.
 
@@ -129,27 +129,35 @@ The RAG pipeline is implemented in `api/rag_service.py`.
     *   **Tokens**: Access tokens are short-lived. Refresh tokens are used to obtain new access tokens. Endpoints are protected using `IsAuthenticated` permission class.
 
 ### How does the chatbot generate responses using the AI model after retrieving documents?
-*   **Model**: The project uses **Mistral-7B-Instruct-v0.2** via the Hugging Face Inference API (an open-source alternative to GPT-3).
+*   **Model**: The project uses **Mistral Large** (`mistral-large-latest`) via the official `mistralai` SDK.
 *   **Process**:
-    1.  Retrieved context strings are joined together.
-    2.  A prompt is constructed: `Context: {context} \n Question: {query}`.
-    3.  This prompt is sent to the Inference Client, which returns the generated text.
+    1.  **Context Retrieval**: Relevant documents are fetched from Pinecone.
+    2.  **History Injection**: The last 5 messages from the user's chat history are retrieved to maintain conversation context.
+    3.  **Prompt Construction**: A system prompt is created combining the retrieved context and chat history.
+    4.  **Generation**: The prompt is sent to the Mistral API, which returns the generated response.
 
 ### How did you schedule and implement background tasks for cleaning up old chat history, and how often do these tasks run?
 *   **Implementation**: Used `APScheduler`'s `BackgroundScheduler`.
-*   **Scheduling**: The task `cleanup_old_chats` is added as an interval job running `days=1` (daily).
+*   **Scheduling**:
+    *   `cleanup_old_chats`: Runs daily to delete messages older than 30 days.
+    *   `send_welcome_email`: Runs as a one-time background job immediately after user registration.
 *   **Startup**: The scheduler is started in the `ready()` method of `api/apps.py` to ensure it runs as long as the server is active.
 
 ### What testing strategies did you use to ensure the functionality of the chatbot, authentication, and background tasks?
 *   **Unit Testing**: Django's `TestCase` can be used to verify model constraints and view logic.
 *   **API Testing**: `APITestCase` ensures endpoints return correct status codes (200, 201, 401) and JSON structures.
-*   **Manual Verification**: Endpoints were verified using tools like Postman/cURL to ensure the RAG pipeline connects to external APIs correctly.
+*   **Manual Verification**: Endpoints were verified using Postman to ensure the RAG pipeline connects to external APIs correctly.
 
 ### What external services (APIs, databases, search engines) did you integrate, and how did you set up and configure them?
-*   **Pinecone**: Used as the Vector Database. Configured via `PINECONE_API_KEY` in `.env`. Initialized in `rag_service.py`.
-*   **Hugging Face**: Used for Embeddings and LLM Inference. Configured via `HUGGINGFACE_API_KEY`. This avoids hosting heavy models locally.
+*   **Pinecone**: Used as the Vector Database. Configured via `PINECONE_API_KEY` in `.env`.
+*   **Mistral AI**: Used for LLM Generation. Configured via `MISTRAL_API_KEY`.
+*   **Hugging Face**: Used for Embeddings. Configured via `HUGGINGFACE_API_KEY`.
+*   **Gmail SMTP**: Used for sending welcome emails. Configured via `EMAIL_HOST_USER` and `EMAIL_HOST_PASSWORD`.
 
 ### How would you expand this chatbot to support more advanced features, such as real-time knowledge base updates or multi-user chat sessions?
+*   **Real-time Updates**: Implement an endpoint to accept document uploads (PDF/Text), chunk them, generate embeddings, and upsert them to Pinecone dynamically.
+*   **Multi-user Sessions**: The current model already supports multi-user sessions via JWT authentication. To enhance it, we could add WebSocket support (Django Channels) for real-time streaming responses.
+
 *   **Real-time Updates**: Implement an endpoint to upload documents that immediately generates embeddings and upserts them to Pinecone.
 *   **WebSockets**: Use **Django Channels** to support real-time, bi-directional communication for a smoother chat experience (streaming responses).
 *   **Scalability**: Migrate from SQLite to **PostgreSQL** and use **Celery** with Redis for more robust, distributed background task processing.

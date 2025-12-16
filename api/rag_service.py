@@ -13,6 +13,10 @@ MISTRAL_API_KEY = os.getenv('MISTRAL_API_KEY')
 PINECONE_INDEX_NAME = 'chatbot-index'
 
 def get_pinecone_index():
+    """
+    Initializes and returns the Pinecone index.
+    Checks if the index exists; if not, creates it with the specified dimension and metric.
+    """
     pc = Pinecone(api_key=PINECONE_API_KEY)
     
     # Check if index exists, if not create it
@@ -31,12 +35,25 @@ def get_pinecone_index():
     return pc.Index(PINECONE_INDEX_NAME)
 
 def get_embeddings():
+    """
+    Returns the HuggingFace embedding model instance.
+    Uses 'sentence-transformers/all-MiniLM-L6-v2' for generating vector embeddings.
+    """
     return HuggingFaceEndpointEmbeddings(
         huggingfacehub_api_token=HUGGINGFACE_API_KEY,
         model="sentence-transformers/all-MiniLM-L6-v2"
     )
 
 def retrieve_context(query):
+    """
+    Retrieves relevant context from the Pinecone vector database based on the user's query.
+    
+    Args:
+        query (str): The user's input question.
+        
+    Returns:
+        list: A list of text chunks (strings) that are most relevant to the query.
+    """
     embeddings = get_embeddings()
     query_embedding = embeddings.embed_query(query)
     
@@ -53,6 +70,17 @@ def retrieve_context(query):
     return contexts
 
 def get_rag_response(query, context, chat_history=None):
+    """
+    Generates a response from the LLM (Mistral AI) using the retrieved context and chat history.
+    
+    Args:
+        query (str): The user's question.
+        context (list): List of relevant text chunks retrieved from the vector DB.
+        chat_history (list, optional): List of previous ChatMessage objects for context.
+        
+    Returns:
+        str: The generated response from the AI.
+    """
     
     client = Mistral(api_key=MISTRAL_API_KEY)
     
