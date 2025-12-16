@@ -1,0 +1,8 @@
+django
+djangorestframework
+djangorestframework-simplejwt
+apscheduler
+huggingface_hub
+langchain
+pinecone-client
+python-dotenv
