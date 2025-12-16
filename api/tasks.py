@@ -1,7 +1,11 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from django.utils import timezone
 from datetime import timedelta
+from django.core.mail import send_mail
+from django.conf import settings
 from .models import ChatMessage
+
+scheduler = BackgroundScheduler()
 
 def cleanup_old_chats():
     threshold = timezone.now() - timedelta(days=30)
@@ -9,9 +13,18 @@ def cleanup_old_chats():
     print(f"Deleted {deleted_count} old chat messages.")
 
 def send_welcome_email(user_email):
-    print(f"Sending welcome email to {user_email}...")
+    subject = 'Welcome to Backend Only AI Chatbot'
+    message = 'Thank you for registering with our AI Chatbot service.'
+    email_from = settings.EMAIL_HOST_USER
+    recipient_list = [user_email]
+    
+    try:
+        send_mail(subject, message, email_from, recipient_list)
+        print(f"Welcome email sent to {user_email}")
+    except Exception as e:
+        print(f"Failed to send email to {user_email}: {str(e)}")
 
 def start_scheduler():
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(cleanup_old_chats, 'interval', days=1, id='cleanup_old_chats', replace_existing=True)
-    scheduler.start()
+    if not scheduler.running:
+        scheduler.add_job(cleanup_old_chats, 'interval', days=1, id='cleanup_old_chats', replace_existing=True)
+        scheduler.start()

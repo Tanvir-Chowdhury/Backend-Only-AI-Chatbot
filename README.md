@@ -1,13 +1,21 @@
 # Backend-Only AI Chatbot
 
 ## Project Overview
-This project is a backend-only AI chatbot built with Django and Django REST Framework. It leverages a Retrieval-Augmented Generation (RAG) pipeline to provide accurate, context-aware responses. The system integrates with Pinecone for vector storage and Hugging Face for LLM inference (specifically Mistral-7B). It includes secure user authentication via JWT and background tasks for maintenance.
+This project is a backend-only AI chatbot built with Django and Django REST Framework. It leverages a Retrieval-Augmented Generation (RAG) pipeline to provide accurate, context-aware responses.
+
+**Key Features:**
+*   **RAG Pipeline**: Integrates with Pinecone for vector storage and Mistral AI for intelligent response generation.
+*   **Secure Authentication**: Uses JWT (JSON Web Tokens) for secure user signup and login.
+*   **Email Verification**: Sends a welcome email upon successful registration using background tasks.
+*   **Chat History**: Stores user and bot messages in a SQLite database for retrieval.
+*   **Background Tasks**: Automated maintenance tasks (e.g., cleaning old chats) using APScheduler.
+*   **Scalable Architecture**: Built with Django REST Framework, ready for expansion.
 
 ## Technologies Used
 *   **Framework**: Django, Django REST Framework (DRF)
 *   **Authentication**: JSON Web Tokens (JWT) via `djangorestframework-simplejwt`
 *   **Vector Database**: Pinecone
-*   **LLM & Embeddings**: Hugging Face Hub (Mistral-7B-Instruct, Sentence Transformers), LangChain
+*   **LLM & Embeddings**: Hugging Face Hub (Sentence Transformers), Mistral AI (mistral-large-latest)
 *   **Task Scheduling**: APScheduler
 *   **Database**: SQLite (Default Django DB)
 *   **Environment Management**: python-dotenv
@@ -37,6 +45,18 @@ This project is a backend-only AI chatbot built with Django and Django REST Fram
     *   **Description**: Retrieve past chat messages for the authenticated user.
     *   **Response**: List of message objects `[{"id": 1, "role": "user", "content": "...", "timestamp": "..."}, ...]`
 
+## Postman Collection
+A Postman collection is included in the root directory (`postman_collection.json`) to help you test the API endpoints easily.
+
+### How to use:
+1.  Open Postman.
+2.  Click **Import** and select the `postman_collection.json` file.
+3.  The collection "Backend Only RAG Based Chatbot" will appear in your workspace.
+4.  **Environment Variables**: The collection is configured to automatically save the `access_token` after a successful login.
+    *   Run the **Signup** request first to create a user.
+    *   Run the **Login** request. The token will be saved automatically.
+    *   You can now run **Send Message** and **Get History** requests without manually copying the token.
+
 ## Setup Instructions
 
 1.  **Clone the repository**:
@@ -55,13 +75,22 @@ This project is a backend-only AI chatbot built with Django and Django REST Fram
     ```bash
     pip install -r requirements.txt
     ```
-
 4.  **Environment Configuration**:
     Create a `.env` file in the `chatbot` directory with the following keys:
     ```
     PINECONE_API_KEY=your_pinecone_key
     HUGGINGFACE_API_KEY=your_huggingface_key
+    MISTRAL_API_KEY=your_mistral_key
+    EMAIL_HOST_USER=your_gmail_address
+    EMAIL_HOST_PASSWORD=your_gmail_app_password
     ```
+
+    **Where to get API Keys:**
+    *   **Mistral API**: [https://admin.mistral.ai/organization/api-keys](https://admin.mistral.ai/organization/api-keys)
+    *   **Hugging Face API**: [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+    *   **Pinecone API**: [https://app.pinecone.io/](https://app.pinecone.io/)
+    *   **Gmail App Password**: [https://myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) (Enable 2FA first)
+    *   **Pinecone API**: [https://app.pinecone.io/](https://app.pinecone.io/)
 
 5.  **Apply Migrations**:
     ```bash

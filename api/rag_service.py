@@ -1,23 +1,39 @@
 import os
 from dotenv import load_dotenv
-from pinecone import Pinecone
-from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
-from huggingface_hub import InferenceClient
+from pinecone import Pinecone, ServerlessSpec
+from langchain_huggingface import HuggingFaceEndpointEmbeddings
+from mistralai import Mistral
+from mistralai.models import UserMessage
 
 load_dotenv()
 
 PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
 HUGGINGFACE_API_KEY = os.getenv('HUGGINGFACE_API_KEY')
+MISTRAL_API_KEY = os.getenv('MISTRAL_API_KEY')
 PINECONE_INDEX_NAME = 'chatbot-index'
 
 def get_pinecone_index():
     pc = Pinecone(api_key=PINECONE_API_KEY)
+    
+    # Check if index exists, if not create it
+    existing_indexes = [index.name for index in pc.list_indexes()]
+    if PINECONE_INDEX_NAME not in existing_indexes:
+        pc.create_index(
+            name=PINECONE_INDEX_NAME,
+            dimension=384, # Dimension for all-MiniLM-L6-v2
+            metric='cosine',
+            spec=ServerlessSpec(
+                cloud='aws',
+                region='us-east-1'
+            )
+        )
+        
     return pc.Index(PINECONE_INDEX_NAME)
 
 def get_embeddings():
-    return HuggingFaceInferenceAPIEmbeddings(
-        api_key=HUGGINGFACE_API_KEY,
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    return HuggingFaceEndpointEmbeddings(
+        huggingfacehub_api_token=HUGGINGFACE_API_KEY,
+        model="sentence-transformers/all-MiniLM-L6-v2"
     )
 
 def retrieve_context(query):
@@ -36,26 +52,32 @@ def retrieve_context(query):
                 
     return contexts
 
-def get_rag_response(query, context):
+def get_rag_response(query, context, chat_history=None):
     
-    client = InferenceClient(token=HUGGINGFACE_API_KEY)
+    client = Mistral(api_key=MISTRAL_API_KEY)
     
     context_str = "\n\n".join(context)
     
-    prompt = f"""<s>[INST] You are a helpful assistant. Use the following context to answer the user's question.
+    history_str = ""
+    if chat_history:
+        for msg in chat_history:
+            role = "User" if msg.role == 'user' else "Assistant"
+            history_str += f"{role}: {msg.content}\n"
+    
+    prompt = f"""You are a helpful assistant. Use the following context and chat history to answer the user's question.
 
 Context:
 {context_str}
 
-Question:
-{query} [/INST]"""
+Chat History:
+{history_str}
 
-    response = client.text_generation(
-        model="mistralai/Mistral-7B-Instruct-v0.2",
-        prompt=prompt,
-        max_new_tokens=512,
-        temperature=0.7,
-        return_full_text=False
+Question:
+{query}"""
+
+    response = client.chat.complete(
+        model="mistral-large-latest",
+        messages=[UserMessage(content=prompt)],
     )
     
-    return response
+    return response.choices[0].message.content

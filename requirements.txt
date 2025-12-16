@@ -4,5 +4,8 @@ djangorestframework-simplejwt
 apscheduler
 huggingface_hub
 langchain
-pinecone-client
+langchain-community
+langchain-huggingface
+pinecone
+mistralai
 python-dotenv

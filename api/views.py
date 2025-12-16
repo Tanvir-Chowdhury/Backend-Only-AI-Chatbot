@@ -14,8 +14,9 @@ class RegisterView(generics.CreateAPIView):
 
     def perform_create(self, serializer):
         user = serializer.save()
-        from .tasks import send_welcome_email
-        send_welcome_email(user.email)
+        from .tasks import send_welcome_email, scheduler
+        from django.utils import timezone
+        scheduler.add_job(send_welcome_email, 'date', run_date=timezone.now(), args=[user.email])
 
 class LoginView(TokenObtainPairView):
     permission_classes = (AllowAny,)
@@ -36,16 +37,23 @@ class ChatView(APIView):
         if not query:
             return Response({"error": "Message is required"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Save user message
         ChatMessage.objects.create(user=request.user, role='user', content=query)
 
         try:
+            # Retrieve recent chat history (e.g., last 5 messages)
+            recent_history = ChatMessage.objects.filter(user=request.user).order_by('-timestamp')[:5]
+            # Reverse to chronological order for the prompt
+            recent_history = reversed(recent_history)
+
             context = retrieve_context(query)
-            response_obj = get_rag_response(query, context)
+            response_obj = get_rag_response(query, context, chat_history=recent_history)
             
             bot_response = response_obj
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+        # Save bot response
         ChatMessage.objects.create(user=request.user, role='bot', content=bot_response)
 
         return Response({"response": bot_response})
