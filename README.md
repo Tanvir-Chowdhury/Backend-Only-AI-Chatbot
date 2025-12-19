@@ -90,7 +90,6 @@ A Postman collection is included in the root directory (`postman_collection.json
     *   **Hugging Face API**: [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
     *   **Pinecone API**: [https://app.pinecone.io/](https://app.pinecone.io/)
     *   **Gmail App Password**: [https://myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) (Enable 2FA first)
-    *   **Pinecone API**: [https://app.pinecone.io/](https://app.pinecone.io/)
 
 5.  **Apply Migrations**:
     ```bash
