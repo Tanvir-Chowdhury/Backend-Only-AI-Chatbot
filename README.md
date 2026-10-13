@@ -1,162 +1,240 @@
+<div align="center">
+
 # Backend-Only AI Chatbot
 
-## Project Overview
-This project is a backend-only AI chatbot built with Django and Django REST Framework. It leverages a Retrieval-Augmented Generation (RAG) pipeline to provide accurate, context-aware responses.
+**A JWT-secured Django REST API that answers questions with Retrieval-Augmented Generation (Pinecone + Hugging Face embeddings + Mistral AI).**
 
-**Key Features:**
-*   **RAG Pipeline**: Integrates with Pinecone for vector storage and Mistral AI for intelligent response generation.
-*   **Secure Authentication**: Uses JWT (JSON Web Tokens) for secure user signup and login.
-*   **Email Verification**: Sends a welcome email upon successful registration using background tasks.
-*   **Chat History**: Stores user and bot messages in a SQLite database for retrieval.
-*   **Background Tasks**: Automated maintenance tasks (e.g., cleaning old chats) using APScheduler.
-*   **Scalable Architecture**: Built with Django REST Framework, ready for expansion.
+[![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white&labelColor=0A0A12)](https://www.python.org/)
+[![Django](https://img.shields.io/badge/Django-092E20?style=for-the-badge&logo=django&logoColor=white&labelColor=0A0A12)](https://www.djangoproject.com/)
+[![DRF](https://img.shields.io/badge/Django_REST_Framework-A30000?style=for-the-badge&logo=django&logoColor=white&labelColor=0A0A12)](https://www.django-rest-framework.org/)
+[![JWT](https://img.shields.io/badge/SimpleJWT-000000?style=for-the-badge&logo=jsonwebtokens&logoColor=white&labelColor=0A0A12)](https://github.com/jazzband/djangorestframework-simplejwt)
+<br/>
+[![Pinecone](https://img.shields.io/badge/Pinecone-Vector_DB-00A67E?style=for-the-badge&labelColor=0A0A12)](https://www.pinecone.io/)
+[![Hugging Face](https://img.shields.io/badge/Hugging_Face-Embeddings-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black&labelColor=0A0A12)](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)
+[![Mistral AI](https://img.shields.io/badge/Mistral_AI-LLM-FA520F?style=for-the-badge&logoColor=white&labelColor=0A0A12)](https://mistral.ai/)
+[![LangChain](https://img.shields.io/badge/LangChain-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white&labelColor=0A0A12)](https://www.langchain.com/)
+[![SQLite](https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white&labelColor=0A0A12)](https://www.sqlite.org/)
 
-## Technologies Used
-*   **Framework**: Django, Django REST Framework (DRF)
-*   **Authentication**: JSON Web Tokens (JWT) via `djangorestframework-simplejwt`
-*   **Vector Database**: Pinecone
-*   **LLM & Embeddings**: Hugging Face Hub (Sentence Transformers), Mistral AI (mistral-large-latest)
-*   **Task Scheduling**: APScheduler
-*   **Database**: SQLite (Default Django DB)
-*   **Environment Management**: python-dotenv
+</div>
 
-## API Documentation
+---
 
-### Authentication
-*   **POST /signup**
-    *   **Description**: Register a new user.
-    *   **Body**: `{"email": "user@example.com", "username": "user", "password": "securepassword"}`
-    *   **Response**: `201 Created` with user details.
+## Overview
 
-*   **POST /login**
-    *   **Description**: Authenticate and receive JWT tokens.
-    *   **Body**: `{"email": "user@example.com", "password": "securepassword"}`
-    *   **Response**: `{"refresh": "...", "access": "..."}`
+This project is a headless chatbot backend. Users sign up, log in with their email to get JWT tokens, and send messages to a protected `/chat/` endpoint. Each message is embedded, matched against a Pinecone vector index, and combined with the user's recent conversation history into a prompt for Mistral Large. Every user and bot message is persisted, and a background scheduler handles welcome emails and old-chat cleanup.
 
-### Chat
-*   **POST /chat**
-    *   **Headers**: `Authorization: Bearer <access_token>`
-    *   **Description**: Send a message to the chatbot.
-    *   **Body**: `{"message": "What is the capital of France?"}`
-    *   **Response**: `{"response": "The capital of France is Paris."}`
+## Key Features
 
-*   **GET /chat-history**
-    *   **Headers**: `Authorization: Bearer <access_token>`
-    *   **Description**: Retrieve past chat messages for the authenticated user.
-    *   **Response**: List of message objects `[{"id": 1, "role": "user", "content": "...", "timestamp": "..."}, ...]`
+- **RAG pipeline**: query embedding with `sentence-transformers/all-MiniLM-L6-v2`, top-3 retrieval from Pinecone, answer generation with `mistral-large-latest`.
+- **Conversation memory**: the last 5 messages of the user's history are injected into every prompt.
+- **JWT authentication**: email-based login via `djangorestframework-simplejwt`; chat endpoints require a Bearer token.
+- **Custom user model**: extends `AbstractUser` with `email` as the unique login field.
+- **Persistent chat history**: every user and bot message is stored per user and retrievable in chronological order.
+- **Background jobs (APScheduler)**: welcome email sent asynchronously after signup, plus a daily job that deletes messages older than 30 days.
+- **Auto-provisioned vector index**: creates the `chatbot-index` Pinecone serverless index (384 dims, cosine, AWS `us-east-1`) if it does not exist.
+- **Postman collection included**: ready-made requests that save the access token automatically after login.
 
-## Postman Collection
-A Postman collection is included in the root directory (`postman_collection.json`) to help you test the API endpoints easily.
+## How a Chat Request Flows
 
-### How to use:
-1.  Open Postman.
-2.  Click **Import** and select the `postman_collection.json` file.
-3.  The collection "Backend Only RAG Based Chatbot" will appear in your workspace.
-4.  **Environment Variables**: The collection is configured to automatically save the `access_token` after a successful login.
-    *   Run the **Signup** request first to create a user. (Change the credentials in the body if needed)
-    *   Run the **Login** request. The token will be saved automatically. (Change the credentials in the body if needed)
-    *   You can now run **Send Message** and **Get History** requests without manually copying the token. (Change the message in the body if needed)
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant API as Django REST API<br/>(ChatView)
+    participant DB as SQLite<br/>(ChatMessage)
+    participant HF as Hugging Face<br/>(all-MiniLM-L6-v2)
+    participant PC as Pinecone<br/>(chatbot-index)
+    participant M as Mistral AI<br/>(mistral-large-latest)
 
-## Setup Instructions
+    C->>API: POST /chat/ {"message"} + Bearer JWT
+    API->>API: Validate JWT (IsAuthenticated)
+    API->>DB: Save user message
+    API->>DB: Load last 5 messages
+    API->>HF: Embed query
+    HF-->>API: 384-dim vector
+    API->>PC: query(top_k=3, include_metadata)
+    PC-->>API: Matching chunks (metadata text/content)
+    API->>M: Prompt = context + chat history + question
+    M-->>API: Generated answer
+    API->>DB: Save bot message
+    API-->>C: {"response": "..."}
+```
 
-1.  **Clone the repository**:
-    ```bash
-    git clone <repository-url>
-    cd chatbot
-    ```
+## Tech Stack
 
-2.  **Create and activate a virtual environment**:
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows: venv\Scripts\activate
-    ```
+| Layer | Technology |
+| --- | --- |
+| Web framework | Django, Django REST Framework |
+| Authentication | JWT via `djangorestframework-simplejwt` |
+| Embeddings | Hugging Face Inference (`langchain-huggingface`, `sentence-transformers/all-MiniLM-L6-v2`) |
+| Vector database | Pinecone (serverless) |
+| LLM | Mistral AI `mistral-large-latest` via the `mistralai` SDK |
+| Relational database | SQLite |
+| Background jobs | APScheduler `BackgroundScheduler` |
+| Email | Django SMTP backend (Gmail, TLS, port 587) |
+| Config | `python-dotenv` |
 
-3.  **Install dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-4.  **Environment Configuration**:
-    Create a `.env` file in the `chatbot` directory with the following keys:
-    ```
-    PINECONE_API_KEY=your_pinecone_key
-    HUGGINGFACE_API_KEY=your_huggingface_key
-    MISTRAL_API_KEY=your_mistral_key
-    EMAIL_HOST_USER=your_gmail_address
-    EMAIL_HOST_PASSWORD=your_gmail_app_password
-    ```
+## Project Structure
 
-    **Where to get API Keys:**
-    *   **Mistral API**: [https://admin.mistral.ai/organization/api-keys](https://admin.mistral.ai/organization/api-keys)
-    *   **Hugging Face API**: [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
-    *   **Pinecone API**: [https://app.pinecone.io/](https://app.pinecone.io/)
-    *   **Gmail App Password**: [https://myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) (Enable 2FA first)
+```text
+Backend-Only-AI-Chatbot/
+├── api/
+│   ├── migrations/          # Database migrations
+│   ├── apps.py              # Starts the APScheduler on app load
+│   ├── models.py            # User, ChatMessage, Document
+│   ├── rag_service.py       # Embeddings, Pinecone retrieval, Mistral generation
+│   ├── serializers.py       # User and ChatMessage serializers
+│   ├── tasks.py             # cleanup_old_chats, send_welcome_email, scheduler
+│   ├── urls.py              # API routes
+│   └── views.py             # Register, Login, Chat, ChatHistory views
+├── chatbot/
+│   ├── settings.py          # Django, DRF, JWT and SMTP settings
+│   ├── urls.py              # Root URLconf (admin + api)
+│   ├── asgi.py
+│   └── wsgi.py
+├── manage.py
+├── postman_collection.json  # Postman collection for all endpoints
+└── requirements.txt
+```
 
-5.  **Apply Migrations**:
-    ```bash
-    python manage.py migrate
-    ```
+## Getting Started
 
-6.  **Run the Server**:
-    ```bash
-    python manage.py runserver
-    ```
+### Prerequisites
 
-## Background Task Setup
-The project uses **APScheduler** to handle background tasks. The scheduler is initialized in `api/apps.py` and starts automatically when the Django application loads.
+- Python 3
+- API keys for Pinecone, Hugging Face and Mistral AI
+- A Gmail account with an App Password (for welcome emails)
 
-*   **Task**: `cleanup_old_chats`
-*   **Schedule**: Runs daily (every 24 hours).
-*   **Function**: Deletes chat messages older than 30 days to maintain database performance.
+### Installation
 
-## Technical Details & Q&A
+```bash
+git clone https://github.com/Tanvir-Chowdhury/Backend-Only-AI-Chatbot.git
+cd Backend-Only-AI-Chatbot
 
-### How did you integrate the RAG pipeline for the chatbot, and what role does document retrieval play in the response generation?
-The RAG pipeline is implemented in `api/rag_service.py`.
-1.  **Embeddings**: User queries are converted into vector embeddings using `HuggingFaceEndpointEmbeddings` (sentence-transformers model).
-2.  **Retrieval**: These embeddings are used to query the **Pinecone** vector database to find the top 3 most relevant document chunks.
-3.  **Role**: Document retrieval provides the "Ground Truth" or context. This context is injected into the prompt sent to the LLM, ensuring the model generates answers based on specific knowledge rather than just its training data.
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
 
-### What database and model structure did you use for storing user and chat history, and why did you choose this approach?
-*   **Database**: SQLite is used for simplicity and ease of local development.
-*   **User Model**: Extends `AbstractUser` to use `email` as the unique identifier, which is a modern standard for web apps.
-*   **ChatMessage Model**: Stores `user` (ForeignKey), `role` ('user'/'bot'), `content`, and `timestamp`. This relational structure allows for efficient querying of history per user (`filter(user=request.user)`).
+pip install -r requirements.txt
+```
 
-### How did you implement user authentication using JWT? What security measures did you take for handling passwords and tokens?
-*   **Implementation**: Used `djangorestframework-simplejwt`.
-*   **Security**:
-    *   **Passwords**: Django's default hashing (PBKDF2) is used; passwords are never stored in plain text.
-    *   **Tokens**: Access tokens are short-lived. Refresh tokens are used to obtain new access tokens. Endpoints are protected using `IsAuthenticated` permission class.
+Create a `.env` file in the project root (see [Environment Variables](#environment-variables)), then:
 
-### How does the chatbot generate responses using the AI model after retrieving documents?
-*   **Model**: The project uses **Mistral Large** (`mistral-large-latest`) via the official `mistralai` SDK.
-*   **Process**:
-    1.  **Context Retrieval**: Relevant documents are fetched from Pinecone.
-    2.  **History Injection**: The last 5 messages from the user's chat history are retrieved to maintain conversation context.
-    3.  **Prompt Construction**: A system prompt is created combining the retrieved context and chat history.
-    4.  **Generation**: The prompt is sent to the Mistral API, which returns the generated response.
+```bash
+python manage.py migrate
+python manage.py runserver
+```
 
-### How did you schedule and implement background tasks for cleaning up old chat history, and how often do these tasks run?
-*   **Implementation**: Used `APScheduler`'s `BackgroundScheduler`.
-*   **Scheduling**:
-    *   `cleanup_old_chats`: Runs daily to delete messages older than 30 days.
-    *   `send_welcome_email`: Runs as a one-time background job immediately after user registration.
-*   **Startup**: The scheduler is started in the `ready()` method of `api/apps.py` to ensure it runs as long as the server is active.
+The API is served at `http://127.0.0.1:8000/`. The background scheduler starts automatically with the server.
 
-### What testing strategies did you use to ensure the functionality of the chatbot, authentication, and background tasks?
-*   **Unit Testing**: Django's `TestCase` can be used to verify model constraints and view logic.
-*   **API Testing**: `APITestCase` ensures endpoints return correct status codes (200, 201, 401) and JSON structures.
-*   **Manual Verification**: Endpoints were verified using Postman to ensure the RAG pipeline connects to external APIs correctly.
+> **Knowledge base note:** retrieval reads the `text` or `content` field from Pinecone match metadata. The repo does not include an ingestion script, so populate `chatbot-index` with your own 384-dimension embeddings before expecting grounded answers.
 
-### What external services (APIs, databases, search engines) did you integrate, and how did you set up and configure them?
-*   **Pinecone**: Used as the Vector Database. Configured via `PINECONE_API_KEY` in `.env`.
-*   **Mistral AI**: Used for LLM Generation. Configured via `MISTRAL_API_KEY`.
-*   **Hugging Face**: Used for Embeddings. Configured via `HUGGINGFACE_API_KEY`.
-*   **Gmail SMTP**: Used for sending welcome emails. Configured via `EMAIL_HOST_USER` and `EMAIL_HOST_PASSWORD`.
+## Environment Variables
 
-### How would you expand this chatbot to support more advanced features, such as real-time knowledge base updates or multi-user chat sessions?
-*   **Real-time Updates**: Implement an endpoint to accept document uploads (PDF/Text), chunk them, generate embeddings, and upsert them to Pinecone dynamically.
-*   **Multi-user Sessions**: The current model already supports multi-user sessions via JWT authentication. To enhance it, we could add WebSocket support (Django Channels) for real-time streaming responses.
+| Variable | Used for |
+| --- | --- |
+| `PINECONE_API_KEY` | Pinecone vector database access |
+| `HUGGINGFACE_API_KEY` | Hugging Face embedding endpoint |
+| `MISTRAL_API_KEY` | Mistral AI chat completions |
+| `EMAIL_HOST_USER` | Gmail address used to send welcome emails |
+| `EMAIL_HOST_PASSWORD` | Gmail App Password |
 
-*   **Real-time Updates**: Implement an endpoint to upload documents that immediately generates embeddings and upserts them to Pinecone.
-*   **WebSockets**: Use **Django Channels** to support real-time, bi-directional communication for a smoother chat experience (streaming responses).
-*   **Scalability**: Migrate from SQLite to **PostgreSQL** and use **Celery** with Redis for more robust, distributed background task processing.
+Where to get them: [Pinecone](https://app.pinecone.io/) · [Hugging Face](https://huggingface.co/settings/tokens) · [Mistral AI](https://admin.mistral.ai/organization/api-keys) · [Gmail App Passwords](https://myaccount.google.com/apppasswords) (requires 2FA)
+
+## API Endpoints
+
+| Method | Path | Auth | Description |
+| --- | --- | --- | --- |
+| `POST` | `/signup/` | None | Register a user (`email`, `username`, `password`) and queue a welcome email |
+| `POST` | `/login/` | None | Exchange `email` + `password` for JWT `access` and `refresh` tokens |
+| `POST` | `/chat/` | Bearer JWT | Send a message and receive a RAG-generated answer |
+| `GET` | `/chat-history/` | Bearer JWT | List the authenticated user's messages, oldest first |
+| `GET` | `/admin/` | Django session | Default Django admin site |
+
+### Example Requests
+
+**Sign up**
+
+```bash
+curl -X POST http://127.0.0.1:8000/signup/ \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "username": "user", "password": "securepassword"}'
+```
+
+```json
+{ "id": 1, "email": "user@example.com", "username": "user" }
+```
+
+**Log in**
+
+```bash
+curl -X POST http://127.0.0.1:8000/login/ \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "securepassword"}'
+```
+
+```json
+{ "refresh": "<refresh_token>", "access": "<access_token>" }
+```
+
+**Chat**
+
+```bash
+curl -X POST http://127.0.0.1:8000/chat/ \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is the capital of France?"}'
+```
+
+```json
+{ "response": "..." }
+```
+
+A missing `message` returns `400` with `{"error": "Message is required"}`; upstream RAG failures return `500` with an `error` field.
+
+**Chat history**
+
+```bash
+curl http://127.0.0.1:8000/chat-history/ \
+  -H "Authorization: Bearer <access_token>"
+```
+
+```json
+[
+  { "id": 1, "role": "user", "content": "What is the capital of France?", "timestamp": "..." },
+  { "id": 2, "role": "bot",  "content": "...", "timestamp": "..." }
+]
+```
+
+### Postman
+
+Import `postman_collection.json` into Postman to get the **Backend Only RAG Based Chatbot** collection. Run **Signup**, then **Login** (the access token is saved automatically), then **Send Message** and **Get History**.
+
+## Data Model
+
+| Model | Fields | Notes |
+| --- | --- | --- |
+| `User` | `email` (unique), `username`, `password` | `USERNAME_FIELD = 'email'` |
+| `ChatMessage` | `user`, `role` (`user` / `bot`), `content`, `timestamp` | Cascade-deleted with the user |
+| `Document` | `title`, `content`, `created_at` | Metadata reference; vectors live in Pinecone |
+
+## Background Tasks
+
+| Task | Trigger | What it does |
+| --- | --- | --- |
+| `send_welcome_email` | One-off job right after signup | Sends a welcome email over Gmail SMTP |
+| `cleanup_old_chats` | Every 24 hours | Deletes chat messages older than 30 days |
+
+Both run in an APScheduler `BackgroundScheduler` started from `ApiConfig.ready()` in `api/apps.py`.
+
+## Roadmap Ideas
+
+- Document upload endpoint that chunks, embeds and upserts to Pinecone
+- Streaming responses over WebSockets (Django Channels)
+- PostgreSQL and Celery + Redis for production workloads
+
+## Author
+
+**Md Tanvir Chowdhury**
+
+[![GitHub](https://img.shields.io/badge/GitHub-Tanvir--Chowdhury-181717?style=for-the-badge&logo=github&logoColor=white&labelColor=0A0A12)](https://github.com/Tanvir-Chowdhury)
+[![Portfolio](https://img.shields.io/badge/Portfolio-Visit-6C63FF?style=for-the-badge&logo=googlechrome&logoColor=white&labelColor=0A0A12)](https://tanvir-chowdhury.github.io/tanvir-portfolio/)
